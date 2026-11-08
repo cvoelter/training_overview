@@ -1,0 +1,73 @@
+name: Build and deploy training overview
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours (UTC)
+  workflow_dispatch:         # "Run workflow" button in the Actions tab
+  repository_dispatch:       # lets source repos trigger a refresh
+    types: [report-updated]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download reports
+        env:
+          GH_TOKEN: ${{ secrets.SOURCE_REPOS_TOKEN }}
+        run: python scripts/build_site.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Encrypt pages
+        env:
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+          # Not secret. All pages share one salt so that "Remember me" unlocks every page.
+          SALT: f7936c0a67588da7c7c0f46fd81ec464
+        run: |
+          if [ -z "$SITE_PASSWORD" ]; then
+            echo "::error::Secret SITE_PASSWORD is not set - refusing to publish unencrypted pages."
+            exit 1
+          fi
+          npm install -g staticrypt@3
+          cd public
+          for f in index.html reports/*.html; do
+            staticrypt "$f" -d "$(dirname "$f")" -p "$SITE_PASSWORD" --salt "$SALT" -c false \
+              --short --remember 30 \
+              --template-title "Training Overview" \
+              --template-instructions "Enter the password to view the experiment reports." \
+              --template-remember "Remember me (recommended)" \
+              --template-color-primary "#2f6fde" --template-color-secondary "#f6f7f9"
+          done
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

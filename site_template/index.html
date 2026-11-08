@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Overview</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1f2328; --muted: #656d76;
+    --border: #d8dee4; --accent: #2f6fde; --accent-bg: #e8f0fe; --bad: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --panel: #161b22; --text: #e6edf3; --muted: #8d96a0;
+      --border: #30363d; --accent: #58a6ff; --accent-bg: #1c2d44; --bad: #ff7b72;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: grid; grid-template-columns: 260px 1fr; grid-template-rows: 100%;
+  }
+  aside {
+    background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  aside header { padding: 18px 16px 10px; }
+  aside h1 { font-size: 17px; margin: 0 0 4px; }
+  aside .built { font-size: 12px; color: var(--muted); }
+  #filter {
+    margin: 6px 16px 10px; padding: 7px 10px; font: inherit; font-size: 14px;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text);
+  }
+  nav { overflow-y: auto; padding: 0 8px 16px; }
+  nav a {
+    display: block; padding: 9px 10px; border-radius: 6px; margin-bottom: 2px;
+    color: var(--text); text-decoration: none;
+  }
+  nav a:hover { background: var(--bg); }
+  nav a.active { background: var(--accent-bg); }
+  nav a.active .name { color: var(--accent); }
+  nav .name { font-weight: 600; font-size: 14px; }
+  nav .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  nav .failed .meta { color: var(--bad); }
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .bar {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--border); font-size: 14px;
+  }
+  .bar .title { font-weight: 600; }
+  .bar .sub { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar a { color: var(--accent); text-decoration: none; white-space: nowrap; }
+  #select { display: none; flex: 1; font: inherit; padding: 6px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+  .empty { padding: 40px; color: var(--muted); }
+
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; }
+    aside { display: none; }
+    #select { display: block; }
+    .bar .title, .bar .sub { display: none; }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <header>
+    <h1>Training Overview</h1>
+    <div class="built" id="built"></div>
+  </header>
+  <input id="filter" type="search" placeholder="Filter experiments…" aria-label="Filter experiments">
+  <nav id="nav"></nav>
+</aside>
+<main>
+  <div class="bar">
+    <select id="select" aria-label="Select experiment"></select>
+    <span class="title" id="title"></span>
+    <span class="sub" id="sub"></span>
+    <a id="newtab" href="#" target="_blank" rel="noopener">Open in new tab ↗</a>
+  </div>
+  <iframe id="frame" title="Experiment report"></iframe>
+</main>
+
+<script>
+  const SITE = /*__SITE_DATA__*/null;
+  const experiments = (SITE && SITE.experiments) || [];
+
+  const fmtDate = iso => iso ? new Date(iso).toLocaleString(undefined,
+    { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+  const meta = e => !e.ok ? "could not be loaded" : e.updated ? "updated " + fmtDate(e.updated) : e.repo;
+
+  const nav = document.getElementById("nav");
+  const select = document.getElementById("select");
+  const frame = document.getElementById("frame");
+
+  document.getElementById("built").textContent = SITE ? "Synced " + fmtDate(SITE.built) : "";
+
+  for (const e of experiments) {
+    const a = document.createElement("a");
+    a.href = "#" + encodeURIComponent(e.id);
+    a.dataset.id = e.id;
+    if (!e.ok) a.classList.add("failed");
+    a.innerHTML = '<div class="name"></div><div class="meta"></div>';
+    a.querySelector(".name").textContent = e.name;
+    a.querySelector(".meta").textContent = meta(e);
+    a.title = e.description || e.name;
+    nav.appendChild(a);
+
+    const opt = document.createElement("option");
+    opt.value = e.id;
+    opt.textContent = e.name;
+    select.appendChild(opt);
+  }
+
+  document.getElementById("filter").addEventListener("input", ev => {
+    const q = ev.target.value.toLowerCase();
+    for (const a of nav.children) {
+      const e = experiments.find(x => x.id === a.dataset.id);
+      a.style.display = (e.name + " " + e.description + " " + e.repo).toLowerCase().includes(q) ? "" : "none";
+    }
+  });
+  select.addEventListener("change", () => { location.hash = encodeURIComponent(select.value); });
+
+  function show() {
+    const id = decodeURIComponent(location.hash.slice(1));
+    const e = experiments.find(x => x.id === id) || experiments[0];
+    if (!e) {
+      document.querySelector("main").innerHTML = '<p class="empty">No experiments configured yet.</p>';
+      return;
+    }
+    const src = "reports/" + encodeURIComponent(e.id) + ".html";
+    if (frame.getAttribute("src") !== src) frame.src = src;
+    document.getElementById("newtab").href = src;
+    document.getElementById("title").textContent = e.name;
+    document.getElementById("sub").textContent = [e.description, meta(e)].filter(Boolean).join(" · ");
+    document.title = e.name + " – Training Overview";
+    select.value = e.id;
+    for (const a of nav.children) a.classList.toggle("active", a.dataset.id === e.id);
+  }
+  window.addEventListener("hashchange", show);
+  show();
+</script>
+</body>
+</html>
